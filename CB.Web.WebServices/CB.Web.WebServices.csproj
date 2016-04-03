@@ -72,6 +72,12 @@
     <None Include="app.config" />
     <None Include="packages.config" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\CB.Database\CB.Database.SqlServer\CB.Database.SqlServer.csproj">
+      <Project>{df637e58-f7a0-4a3f-b53d-25c264d846aa}</Project>
+      <Name>CB.Database.SqlServer</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
