@@ -10,7 +10,7 @@ using CB.Database.SqlServer;
 
 namespace CB.Web.WebServices
 {
-    public class QueryController: ApiController
+    public class QueryController : ApiController
     {
         #region Fields
         private readonly string _connectionString;
@@ -23,7 +23,7 @@ namespace CB.Web.WebServices
             _connectionString = GetConnectionString(connectionStringSetting);
         }
 
-        public QueryController(): this("DefaultConnection") { }
+        public QueryController() : this("DefaultConnection") { }
         #endregion
 
 
