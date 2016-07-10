@@ -31,7 +31,7 @@ namespace CB.Web.WebServices
         {
             try
             {
-                var result = await Http.PostAsync<DataRequestCollection, DataResult>(_url, requestCollection);
+                var result = (await Http.PostAsync<DataRequestCollection, DataResult>(_url, requestCollection)).Value;
                 if (!result.HasError()) return result;
 
                 Error = result.Error;
