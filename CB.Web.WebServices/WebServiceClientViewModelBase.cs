@@ -155,18 +155,6 @@ namespace CB.Web.WebServices
 
         public async Task SaveItemAsync()
             => await SaveAsync(SelectedItem);
-
-        public async Task TryAsync(Func<Task> action)
-        {
-            try
-            {
-                await action();
-            }
-            catch (Exception exception)
-            {
-                NotifyRequestProvider.NotifyError(exception.Message);
-            }
-        }
         #endregion
 
 
@@ -197,6 +185,18 @@ namespace CB.Web.WebServices
 
             NotifyRequestProvider.NotifyError(result.Error);
             return true;
+        }
+
+        private async Task TryAsync(Func<Task> action)
+        {
+            try
+            {
+                await action();
+            }
+            catch (Exception exception)
+            {
+                NotifyRequestProvider.NotifyError(exception.Message);
+            }
         }
         #endregion
     }
