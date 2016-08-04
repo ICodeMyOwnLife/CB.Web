@@ -1,4 +1,6 @@
+using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using CB.Model.Common;
@@ -26,26 +28,39 @@ namespace CB.Web.WebServices
             _service = service;
             AddNewCommand = new DelegateCommand(AddNew);
             LoadAsyncCommand = DelegateCommand.FromAsyncHandler(LoadAsync);
-            SaveAsyncCommand = DelegateCommand.FromAsyncHandler(SaveAsync, () => CanSave).ObservesProperty(() => CanSave);
-            DeleteAsyncCommand = new DelegateCommand(Delete, () => CanDelete).ObservesProperty(() => CanDelete);
+            DeleteCommand = new DelegateCommand<TItem>(Delete);
+            DeleteItemCommand =
+                new DelegateCommand(DeleteItem, () => CanDeleteItem).ObservesProperty(() => CanDeleteItem);
+            EditCommand = new DelegateCommand<TItem>(Edit);
+            EditItemCommand = new DelegateCommand(EditItem, () => CanEditItem).ObservesProperty(() => CanEditItem);
+            SaveItemAsyncCommand =
+                DelegateCommand.FromAsyncHandler(SaveItemAsync, () => CanSaveItem).ObservesProperty(() => CanSaveItem);
         }
         #endregion
 
 
         #region  Commands
         public ICommand AddNewCommand { get; }
-        public ICommand DeleteAsyncCommand { get; }
+        public ICommand DeleteCommand { get; }
+        public ICommand DeleteItemCommand { get; }
+        public ICommand EditCommand { get; }
+        public ICommand EditItemCommand { get; }
         public ICommand LoadAsyncCommand { get; }
-        public ICommand SaveAsyncCommand { get; }
+        public ICommand SaveItemAsyncCommand { get; }
         #endregion
 
 
         #region  Properties & Indexers
-        public bool CanDelete => SelectedItem != null && SelectedItem.Id != null;
+        public bool CanDeleteItem
+            => CanDelete(SelectedItem);
 
-        public bool CanSave => SelectedItem != null && !SelectedItem.HasErrors;
+        public bool CanEditItem => CanEdit(SelectedItem);
+
+        public bool CanSaveItem => CanSave(SelectedItem);
 
         public ConfirmRequestProvider ConfirmRequestProvider { get; } = new ConfirmRequestProvider();
+
+        public ConfirmRequestProvider EditRequestProvider { get; } = new ConfirmRequestProvider();
 
         public ObservableCollection<TItem> Items
         {
@@ -53,12 +68,18 @@ namespace CB.Web.WebServices
             private set { SetProperty(ref _items, value); }
         }
 
+        public NotifyRequestProvider NotifyRequestProvider { get; } = new NotifyRequestProvider();
+
         public TItem SelectedItem
         {
             get { return _selectedItem; }
             set
             {
-                if (SetProperty(ref _selectedItem, value)) NotifyPropertiesChanged(nameof(CanDelete), nameof(CanSave));
+                if (_selectedItem != null) _selectedItem.PropertyChanged -= SelectedItem_PropertyChanged;
+                if (SetProperty(ref _selectedItem, value))
+                    NotifyPropertiesChanged(nameof(CanDeleteItem), nameof(CanEditItem), nameof(CanSaveItem));
+
+                if (_selectedItem != null) _selectedItem.PropertyChanged += SelectedItem_PropertyChanged;
             }
         }
 
@@ -72,51 +93,109 @@ namespace CB.Web.WebServices
 
         #region Methods
         public void AddNew()
-            => SelectedItem = new TItem();
+            => Edit(new TItem());
 
-        public void Delete()
+        public void Delete(TItem item)
         {
-            ConfirmRequestProvider.Confirm($"Are you sure you want to delete {ConvertItemToString(SelectedItem)}?",
-                async context =>
+            if (!CanDelete(item)) return;
+
+            ConfirmRequestProvider.Confirm($"Are you sure you want to delete {ConvertItemToString(item)}?",
+                async context => await TryAsync(async () =>
                 {
                     if (!context.Confirmed) return;
-                    var result = await _service.DeleteAsync(SelectedItem);
-                    if (SetError(result)) return;
+                    var result = await _service.DeleteAsync(item);
+                    if (NotifyError(result)) return;
 
-                    if (result.Value) Status = "Deletion successful!";
-                    Items.Remove(SelectedItem);
-                });
+                    if (result.Value) NotifyRequestProvider.Notify("Successful", "Deletion successful!");
+                    Items.Remove(item);
+                }));
         }
+
+        public void DeleteItem()
+            => Delete(SelectedItem);
+
+        public void Edit(TItem item)
+        {
+            if (!CanEdit(item)) return;
+
+            SelectedItem = item;
+            EditRequestProvider.Confirm("Edit Job", this, async context =>
+            {
+                if (!context.Confirmed) return;
+                await SaveAsync(item);
+            });
+        }
+
+        public void EditItem()
+            => Edit(SelectedItem);
 
         public async Task LoadAsync()
+            => await TryAsync(async () =>
+            {
+                var result = await _service.GetAsync();
+                if (!NotifyError(result)) Items = new ObservableCollection<TItem>(result.Value);
+            });
+
+        public async Task SaveAsync(TItem item)
         {
-            var result = await _service.GetAsync();
-            if (!SetError(result)) Items = new ObservableCollection<TItem>(result.Value);
+            if (!CanSave(item)) return;
+
+            await TryAsync(async () =>
+            {
+                var result = await _service.PostAsync(item);
+                if (!NotifyError(result))
+                {
+                    item.Id = result.Value.Id;
+                    if (Items == null) await LoadAsync();
+
+                    if (Items != null && !Items.Contains(item)) Items.Add(item);
+                }
+            });
         }
 
-        public async Task SaveAsync()
-        {
-            var result = await _service.PostAsync(SelectedItem);
-            if (!SetError(result))
-            {
-                SelectedItem.Id = result.Value.Id;
-                if (Items == null) await LoadAsync();
+        public async Task SaveItemAsync()
+            => await SaveAsync(SelectedItem);
 
-                if (Items != null && !Items.Contains(SelectedItem)) Items.Add(SelectedItem);
+        public async Task TryAsync(Func<Task> action)
+        {
+            try
+            {
+                await action();
+            }
+            catch (Exception exception)
+            {
+                NotifyRequestProvider.NotifyError(exception.Message);
             }
         }
         #endregion
 
 
+        #region Event Handlers
+        private void SelectedItem_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(PrismModelBase.HasErrors)) NotifyPropertyChanged(nameof(CanSaveItem));
+        }
+        #endregion
+
+
         #region Implementation
+        private static bool CanDelete(TItem item)
+            => item != null && item.Id != null;
+
+        private static bool CanEdit(TItem item)
+            => item != null;
+
+        private static bool CanSave(TItem item)
+            => item != null && !item.HasErrors;
+
         protected virtual string ConvertItemToString(TItem item)
             => item.ToString();
 
-        private bool SetError(IError result)
+        private bool NotifyError(IError result)
         {
             if (string.IsNullOrEmpty(result.Error)) return false;
 
-            Status = result.Error;
+            NotifyRequestProvider.NotifyError(result.Error);
             return true;
         }
         #endregion
