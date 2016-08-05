@@ -119,7 +119,7 @@ namespace CB.Web.WebServices
             if (!CanEdit(item)) return;
 
             SelectedItem = item;
-            EditRequestProvider.Confirm("Edit Job", this, async context =>
+            EditRequestProvider.Confirm("Edit", this, async context =>
             {
                 if (!context.Confirmed) return;
                 await SaveAsync(item);
